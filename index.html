@@ -1,0 +1,92 @@
+<!DOCTYPE html><html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="theme-color" content="#e8590c"><link rel="manifest" href="manifest.webmanifest"><title>VAIcoupon</title>
+<style>
+:root{--bg:#f5f6fa;--fg:#1b1f2a;--card:#fff;--mut:#6b7280;--pri:#e8590c;--bd:#e3e6ee;--ok:#16a34a}
+@media (prefers-color-scheme:dark){:root{--bg:#12141a;--fg:#eef0f5;--card:#1c1f28;--mut:#9aa1b0;--bd:#2c303c}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.4 system-ui,-apple-system,sans-serif;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+#app{max-width:480px;margin:0 auto;padding:12px 14px 40px}
+.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}.logo{font-weight:800;font-size:20px}.logo b{color:var(--pri)}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:14px;margin-bottom:12px}
+h2{margin:0 0 8px;font-size:18px}h3{margin:0 0 6px;font-size:15px}.mut{color:var(--mut);font-size:13px}
+label{display:block;font-size:13px;color:var(--mut);margin:8px 0 3px}
+input,select{width:100%;padding:10px;border:1px solid var(--bd);border-radius:10px;background:var(--bg);color:var(--fg);font-size:16px}
+input[type=checkbox]{width:auto;margin-right:8px}
+.btn{width:100%;margin-top:12px;padding:12px;border:0;border-radius:12px;background:var(--pri);color:#fff;font-weight:700;font-size:15px}.btn.s{background:var(--bd);color:var(--fg)}.btn:disabled{opacity:.5}
+.lnk{color:var(--pri);background:none;border:0;padding:6px 0;font-size:14px}
+.row{display:flex;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid var(--bd)}.row:last-child{border:0}
+.badge{background:var(--pri);color:#fff;border-radius:10px;padding:2px 8px;font-size:12px}
+.warn{background:#fef3c7;color:#92400e;border-radius:10px;padding:10px;margin-bottom:12px;font-size:14px}
+.cp{border:2px dashed var(--pri);border-radius:14px;padding:14px;background:var(--card)}.big{font-size:30px;font-weight:800;color:var(--pri)}
+.err{color:#dc2626;font-size:13px;margin-top:8px;min-height:1px}
+video{width:100%;border-radius:12px;background:#000;max-height:220px;margin-bottom:6px}
+.toast{position:fixed;left:14px;right:14px;bottom:calc(14px + env(safe-area-inset-bottom));max-width:452px;margin:auto;background:var(--ok);color:#fff;padding:12px;border-radius:12px;text-align:center}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"></script>
+</head><body><div id="app"></div>
+<script>
+let SB_URL='', SB_KEY='';
+try{const c=JSON.parse(localStorage.getItem('vc_cfg')||'{}');SB_URL=c.u||SB_URL;SB_KEY=c.k||SB_KEY}catch(e){}
+function saveCfg(){const u=document.getElementById('cu').value.trim(),k=document.getElementById('ck').value.trim();if(!/^https:\/\//.test(u)||k.length<20)return alert('Controlla URL e chiave');localStorage.setItem('vc_cfg',JSON.stringify({u,k}));location.reload()}
+if(!/^https:\/\//.test(SB_URL)||!SB_KEY){document.getElementById('app').innerHTML='<div class="top"><div class="logo">VAI<b>coupon</b></div></div><div class="card"><h2>Collega Supabase</h2><p class="mut">Una sola volta: incolla il Project URL e la chiave anon public (Supabase, Project Settings, API).</p><label>Project URL</label><input id="cu" placeholder="https://xxxx.supabase.co" autocapitalize="none"><label>Anon public key</label><input id="ck" autocapitalize="none"><button class="btn" onclick="saveCfg()">Salva e continua</button></div>';throw new Error('Configurazione Supabase mancante')}
+if(typeof supabase==='undefined'){document.getElementById('app').innerHTML='<div class="card"><h3>Libreria non caricata</h3><p>Impossibile caricare supabase-js. Controlla la connessione e riprova.</p></div>';throw new Error('supabase-js non caricato')}
+const sb=supabase.createClient(SB_URL,SB_KEY);
+const ERR={UTENTE_NON_APPROVATO:'Il tuo account è in attesa di approvazione',CAMPAGNA_NON_ATTIVA:'Campagna non attiva',LIMITE_BUONI_RAGGIUNTO:'Hai raggiunto il limite di buoni per questa campagna',SERIALE_GIA_UTILIZZATO:'Per questo seriale esiste già un buono',RIVENDITORE_NON_VALIDO:'Rivenditore non valido',SERIALE_NON_VALIDO:'Seriale non valido',PRODOTTO_NON_TROVATO:'Prodotto non trovato',Database:'Dati non validi o già registrati (P.IVA / username / email)',already:'Email già registrata'};
+const msg=e=>{const m=(e&&e.message)||String(e);for(const k in ERR)if(m.includes(k))return ERR[k];return m};
+const $=i=>document.getElementById(i),val=i=>$(i).value.trim(),esc=s=>String(s??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';');
+const fd=s=>s.split('-').reverse().join('/'),eur=n=>Number(n).toLocaleString('it-IT',{style:'currency',currency:'EUR'});
+let S={scr:'login',prof:null,camps:[],riv:[],buoni:[],last:null,msg:''},stream=null;
+function stopCam(){if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}}
+function go(s){stopCam();S.scr=s;draw()}
+function err(t){const e=$('er');if(e)e.textContent=t}
+function toast(t){S.msg=t;draw();setTimeout(()=>{S.msg='';draw()},2600)}
+async function load(nav=true){const {data:{user}}=await sb.auth.getUser();
+ const [p,c,r,b]=await Promise.all([sb.from('profiles').select('*').eq('id',user.id).single(),
+  sb.from('campagne').select('*,campagna_prodotti(*)').order('created_at'),
+  sb.from('rivenditori').select('id,nome').order('nome'),
+  sb.from('buoni').select('*,campagne(nome),rivenditori(nome)').eq('utente_id',user.id).order('created_at',{ascending:false})]);
+ S.prof=p.data;S.camps=c.data||[];S.riv=r.data||[];S.buoni=b.data||[];if(nav)go('home')}
+async function login(){const u=val('u').toLowerCase();if(!u||!val('pw'))return err('Inserisci username e password');
+ const {data:em}=await sb.rpc('email_da_username',{p_username:u});if(!em)return err('Credenziali non valide');
+ const {error}=await sb.auth.signInWithPassword({email:em,password:val('pw')});if(error)return err('Credenziali non valide');await load()}
+async function reg(){const g=val;
+ if(!g('r')||!/^\d{11}$/.test(g('p')))return err('Ragione sociale e P.IVA (11 cifre) obbligatorie');
+ if(!g('u')||!/^\S+@\S+\.\S+$/.test(g('e'))||$('pw').value.length<8)return err('Username, email valida e password di almeno 8 caratteri');
+ if(!$('c1').checked||!$('c2').checked)return err('Accetta regolamento e privacy per continuare');
+ const {data,error}=await sb.auth.signUp({email:g('e'),password:$('pw').value,options:{data:{ragione_sociale:g('r'),partita_iva:g('p'),telefono:g('t'),username:g('u').toLowerCase(),accetta_regolamento:true,accetta_privacy:true,versione_regolamento:'1.0',versione_privacy:'1.0'}}});
+ if(error)return err(msg(error));
+ if(data.session)await load();else{go('login');toast('Registrazione inviata: conferma la email, poi accedi')}}
+async function out(){await sb.auth.signOut();S.prof=null;go('login')}
+async function gen(){const sn=val('sn');if(!sn)return err('Scansiona o inserisci il seriale');
+ $('gb').disabled=true;
+ const {data,error}=await sb.rpc('genera_buono',{p_prodotto_id:$('md').value,p_seriale:sn,p_rivenditore_id:$('rv').value});
+ if(error){$('gb').disabled=false;return err(msg(error))}
+ await load(false);S.last=S.buoni.find(x=>x.id===data.id)||data;go('coupon')}
+async function send(ch){const d=val(ch=='email'?'dm':'dw');
+ if(ch=='email'&&!/^\S+@\S+\.\S+$/.test(d))return err('Email non valida');
+ if(ch=='wa'&&d.replace(/\D/g,'').length<8)return err('Numero WhatsApp non valido');
+ err('Invio in corso...');
+ const {error}=await sb.functions.invoke('invia-buono',{body:{buono_id:S.last.id,canale:ch=='wa'?'whatsapp':'email',destinatario:d}});
+ if(error)return err('Invio non riuscito. Riprova più tardi.');err('');toast('Buono inviato a '+d)}
+async function cam(){const v=$('vd');v.style.display='block';
+ try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});v.srcObject=stream;await v.play();
+  const fin=t=>{$('sn').value=t;if(navigator.vibrate)navigator.vibrate(80);stopCam();v.style.display='none'};
+  if('BarcodeDetector' in window){const d=new BarcodeDetector();(async function loop(){if(!stream)return;try{const r=await d.detect(v);if(r[0])return fin(r[0].rawValue)}catch(e){}setTimeout(loop,300)})()}
+  else if(window.ZXing){new ZXing.BrowserMultiFormatReader().decodeFromVideoElement(v,(r)=>{if(r&&stream)fin(r.getText())})}
+ }catch(e){v.style.display='none';err('Fotocamera non disponibile: inserisci il seriale a mano')}}
+function view(){const s=S.scr,P=S.prof;
+ if(s==='login')return`<div class="card"><h2>Accedi</h2><label>Username</label><input id="u" autocapitalize="none" autocomplete="username"><label>Password</label><input id="pw" type="password" autocomplete="current-password"><div class="err" id="er"></div><button class="btn" onclick="login()">Accedi</button><button class="lnk" onclick="go('reg')">Non hai un account? Registrati</button></div>`;
+ if(s==='reg')return`<div class="card"><h2>Registrazione installatore</h2><label>Ragione sociale</label><input id="r"><label>Partita IVA</label><input id="p" inputmode="numeric" maxlength="11"><label>Email</label><input id="e" type="email"><label>Telefono</label><input id="t" type="tel"><label>Username</label><input id="u" autocapitalize="none"><label>Password (min. 8 caratteri)</label><input id="pw" type="password">
+ <label style="margin-top:12px"><input type="checkbox" id="c1">Accetto il regolamento dell'iniziativa</label><label><input type="checkbox" id="c2">Accetto il trattamento dei dati personali (privacy)</label><div class="err" id="er"></div><button class="btn" onclick="reg()">Registrati</button><button class="lnk" onclick="go('login')">← Torna al login</button></div>`;
+ if(s==='home'){const ok=P.stato==='approvato';return`<div class="card"><h3>Ciao, ${esc(P.ragione_sociale)}</h3><div class="mut">Campagne attive: ${S.camps.length}</div>
+ ${ok?`<button class="btn" onclick="go('scan')">📷 Scansiona prodotto</button>`:''}</div>
+ ${ok?'':`<div class="warn">${P.stato==='sospeso'?'Account sospeso. Contatta l\'amministratore.':'Il tuo account è in attesa di approvazione: potrai generare buoni appena verrà abilitato.'}</div>`}
+ ${S.camps.map(c=>`<div class="card"><h3>${esc(c.nome)}</h3><div class="mut">${fd(c.data_inizio)} – ${fd(c.data_fine)}</div><div style="margin-top:6px">Buoni utilizzati <span class="badge">${S.buoni.filter(b=>b.campagna_id===c.id&&b.stato==='valido').length}/${c.max_buoni_utente}</span></div><div class="mut" style="margin-top:4px">${c.campagna_prodotti.map(p=>esc(p.modello)+' '+eur(p.importo_sconto)).join(' · ')}</div></div>`).join('')}
+ <div class="card"><h3>I miei buoni</h3>${S.buoni.length?S.buoni.map(b=>`<div class="row" onclick="S.last=S.buoni.find(x=>x.id=='${b.id}');go('coupon')"><div><b>${esc(b.numero)}</b><div class="mut">${esc(b.modello)}${b.stato==='annullato'?' · annullato':''}</div></div><b>${eur(b.importo)}</b></div>`).join(''):'<div class="mut">Nessun buono ancora</div>'}</div><button class="lnk" onclick="out()">Esci</button>`}
+ if(s==='scan')return`<div class="card"><h2>Scansiona codice a barre</h2><video id="vd" playsinline muted style="display:none"></video><button class="btn s" style="margin-top:0" onclick="cam()">📷 Attiva fotocamera</button>
+ <label>Seriale prodotto</label><input id="sn" autocapitalize="characters"><label>Campagna e modello</label><select id="md">${S.camps.flatMap(c=>c.campagna_prodotti.map(p=>`<option value="${p.id}">${esc(c.nome)} – ${esc(p.modello)} (${eur(p.importo_sconto)})</option>`)).join('')}</select>
+ <label>Rivenditore dove hai acquistato</label><select id="rv">${S.riv.map(r=>`<option value="${r.id}">${esc(r.nome)}</option>`).join('')}</select><div class="err" id="er"></div><button class="btn" id="gb" onclick="gen()">Genera buono</button><button class="lnk" onclick="go('home')">← Indietro</button></div>`;
+ if(s==='coupon'){const b=S.last,R=x=>`<div class="row"><span class="mut">${x[0]}</span><span>${esc(x[1])}</span></div>`;return`<div class="cp"><div class="mut">Buono sconto VAIcoupon</div><div class="big">${eur(b.importo)}</div><h3>${esc(b.numero)}</h3>${R(['Cliente',P.ragione_sociale])}${R(['Seriale',b.seriale])}${R(['Modello',b.modello])}${R(['Rivenditore',b.rivenditori?.nome])}${R(['Validità',fd(b.valido_dal)+' – '+fd(b.valido_al)])}</div>
+ <div class="card" style="margin-top:12px"><h3>Invia il buono</h3><label>Indirizzo email</label><input id="dm" type="email"><button class="btn s" style="margin-top:6px" onclick="send('email')">✉️ Invia via email</button><label>Numero WhatsApp</label><input id="dw" type="tel" placeholder="+39 333 0000000"><button class="btn s" style="margin-top:6px" onclick="send('wa')">💬 Invia su WhatsApp</button><div class="err" id="er"></div></div><button class="btn s" onclick="go('home')">Torna alla home</button>`}}
+function draw(){$('app').innerHTML=`<div class="top"><div class="logo">VAI<b>coupon</b></div></div>${view()}${S.msg?`<div class="toast">${esc(S.msg)}</div>`:''}`}
+(async()=>{draw();const {data:{session}}=await sb.auth.getSession();if(session)await load()})();
+</script></body></html>
