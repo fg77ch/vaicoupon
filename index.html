@@ -24,7 +24,7 @@ video{width:100%;border-radius:12px;background:#000;max-height:220px;margin-bott
 <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"></script>
 </head><body><div id="app"></div>
 <script>
-SB_URL='https://ezrotwunejoinysllrti.supabase.co/rest/v1/',SB_KEY='sb_publishable_hwEywLrPE3--_7uU0sXfiQ_pHVExWkx';
+SB_URL='https://ezrotwunejoinysllrti.supabase.co',SB_KEY='sb_publishable_hwEywLrPE3--_7uU0sXfiQ_pHVExWkx';
 try{const c=JSON.parse(localStorage.getItem('vc_cfg')||'{}');SB_URL=c.u||SB_URL;SB_KEY=c.k||SB_KEY}catch(e){}
 function saveCfg(){const u=document.getElementById('cu').value.trim(),k=document.getElementById('ck').value.trim();if(!/^https:\/\//.test(u)||k.length<20)return alert('Controlla URL e chiave');localStorage.setItem('vc_cfg',JSON.stringify({u,k}));location.reload()}
 if(!/^https:\/\//.test(SB_URL)||!SB_KEY){document.getElementById('app').innerHTML='<div class="top"><div class="logo">VAI<b>coupon</b></div></div><div class="card"><h2>Collega Supabase</h2><p class="mut">Una sola volta: incolla il Project URL e la chiave anon public (Supabase, Project Settings, API).</p><label>Project URL</label><input id="cu" placeholder="https://xxxx.supabase.co" autocapitalize="none"><label>Anon public key</label><input id="ck" autocapitalize="none"><button class="btn" onclick="saveCfg()">Salva e continua</button></div>';throw new Error('Configurazione Supabase mancante')}
