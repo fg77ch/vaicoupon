@@ -81,9 +81,18 @@ async function cam(){const v=$('vd');v.style.display='block';err('Avvio fotocame
   }else{await loadZX();const rd=new ZXing.BrowserMultiFormatReader(hints());stream={getTracks:()=>[{stop:()=>rd.reset()}]};err('Inquadra il codice a barre (lettore ZXing)');
    rd.decodeFromConstraints({video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}}},'vd',r=>{if(r&&stream)fin(r.getText())})}
  }catch(e){stopCam();v.style.display='none';err('Lettore non disponibile ('+(e.message||e)+'): usa "Leggi da foto" o scrivi il seriale a mano')}}
-async function foto(inp){const f=inp.files[0];if(!f)return;err('Lettura della foto...');
- try{await loadZX();const r=await new ZXing.BrowserMultiFormatReader(hints()).decodeFromImageUrl(URL.createObjectURL(f));$('sn').value=r.getText();err('')}
- catch(e){err('Codice non letto dalla foto: avvicinati, tieni il codice dritto e a fuoco, oppure scrivilo a mano')}}
+async function foto(inp){const f=inp.files[0];if(!f)return;err('Lettura della foto in corso...');
+ try{await loadZX();
+  const img=await new Promise((ok,ko)=>{const i=new Image();i.onload=()=>ok(i);i.onerror=()=>ko(new Error('immagine non leggibile'));i.src=URL.createObjectURL(f)});
+  const W=img.naturalWidth,H=img.naturalHeight;let last='';
+  for(const mx of [1600,1000,2400,700]){for(const rot of [0,90]){
+   const k=Math.min(1,mx/Math.max(W,H)),w=Math.round(W*k),h=Math.round(H*k),c=document.createElement('canvas');
+   c.width=rot?h:w;c.height=rot?w:h;const x=c.getContext('2d');
+   if(rot){x.translate(c.width,0);x.rotate(Math.PI/2)}
+   x.drawImage(img,0,0,w,h);
+   try{const r=await new ZXing.BrowserMultiFormatReader(hints()).decodeFromImageUrl(c.toDataURL('image/jpeg',0.95));$('sn').value=r.getText();err('');return}catch(e){last=e.name||String(e)}}}
+  err('Codice non letto ('+last+'). Avvicinati (15-25 cm), tieni il codice dritto, a fuoco e ben illuminato, oppure scrivi il seriale a mano')
+ }catch(e){err('Errore lettura foto: '+(e.message||e))}}
 function view(){const s=S.scr,P=S.prof;
  if(s==='login')return`<div class="card"><h2>Accedi</h2><label>Username</label><input id="u" autocapitalize="none" autocomplete="username"><label>Password</label><input id="pw" type="password" autocomplete="current-password"><div class="err" id="er"></div><button class="btn" onclick="login()">Accedi</button><button class="lnk" onclick="go('reg')">Non hai un account? Registrati</button></div>`;
  if(s==='reg')return`<div class="card"><h2>Registrazione installatore</h2><label>Ragione sociale</label><input id="r"><label>Partita IVA</label><input id="p" inputmode="numeric" maxlength="11"><label>Email</label><input id="e" type="email"><label>Telefono</label><input id="t" type="tel"><label>Username</label><input id="u" autocapitalize="none"><label>Password (min. 8 caratteri)</label><input id="pw" type="password">
