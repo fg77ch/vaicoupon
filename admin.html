@@ -1,0 +1,83 @@
+<!DOCTYPE html><html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>VAIcoupon Admin</title>
+<style>
+:root{--bg:#f5f6fa;--fg:#1b1f2a;--card:#fff;--mut:#6b7280;--pri:#e8590c;--bd:#e3e6ee;--ok:#16a34a}
+@media (prefers-color-scheme:dark){:root{--bg:#12141a;--fg:#eef0f5;--card:#1c1f28;--mut:#9aa1b0;--bd:#2c303c}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.4 system-ui,-apple-system,sans-serif}
+#app{max-width:720px;margin:0 auto;padding:12px 14px 40px}
+.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}.logo{font-weight:800;font-size:20px}.logo b{color:var(--pri)}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:14px;margin-bottom:12px}
+h3{margin:0 0 8px;font-size:16px}.mut{color:var(--mut);font-size:13px}
+label{display:block;font-size:13px;color:var(--mut);margin:8px 0 3px}
+input,select{width:100%;padding:10px;border:1px solid var(--bd);border-radius:10px;background:var(--bg);color:var(--fg);font-size:16px}
+input[type=checkbox]{width:auto;margin-right:8px}
+.btn{padding:10px 14px;border:0;border-radius:10px;background:var(--pri);color:#fff;font-weight:700;font-size:14px;margin-top:10px}.btn.s{background:var(--bd);color:var(--fg)}.btn.r{background:#dc2626}.btn.sm{padding:6px 10px;margin:0;font-size:13px}
+.tabs{display:flex;gap:6px;margin-bottom:12px;overflow-x:auto}.tabs button{flex:1;white-space:nowrap;padding:9px 12px;border:1px solid var(--bd);background:var(--card);color:var(--fg);border-radius:10px;font-size:14px}.tabs .on{background:var(--pri);color:#fff;border-color:var(--pri)}
+.row{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--bd)}.row:last-child{border:0}
+.badge{border-radius:10px;padding:2px 8px;font-size:12px;color:#fff;background:var(--mut)}.ok{background:var(--ok)}.wa{background:#d97706}.no{background:#dc2626}
+.err{color:#dc2626;font-size:13px;margin-top:8px}.g{display:flex;gap:6px}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head><body><div id="app"></div>
+<script>
+const $=i=>document.getElementById(i),v=i=>$(i).value.trim();
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';');
+const eur=n=>Number(n).toLocaleString('it-IT',{style:'currency',currency:'EUR'}),dt=s=>new Date(s).toLocaleDateString('it-IT');
+let cfg={};try{cfg=JSON.parse(localStorage.getItem('vc_cfg')||'{}')}catch(e){}
+if(!cfg.u||!cfg.k){$('app').innerHTML='<div class="card"><h3>Configurazione mancante</h3><p>Apri prima l\'app VAIcoupon (index.html) da questo stesso sito e collega Supabase, poi torna qui.</p></div>';throw new Error('cfg')}
+const sb=supabase.createClient(cfg.u,cfg.k);
+let A={tab:'iscritti',users:[],buoni:[],camps:[],riv:[],ed:null,ok:false};
+const STATI={approvato:'ok',in_attesa:'wa',sospeso:'no'};
+async function q(p){const {error}=await p;if(error)alert(error.message);await load()}
+async function load(){const [u,b,c,r]=await Promise.all([
+ sb.from('profiles').select('*').order('created_at',{ascending:false}),
+ sb.from('buoni').select('*,campagne(nome),rivenditori(nome),profiles(ragione_sociale,partita_iva)').order('created_at',{ascending:false}),
+ sb.from('campagne').select('*,campagna_prodotti(*)').order('created_at',{ascending:false}),
+ sb.from('rivenditori').select('*').order('nome')]);
+ A.users=u.data||[];A.buoni=b.data||[];A.camps=c.data||[];A.riv=r.data||[];A.ok=true;draw()}
+async function login(){const u=v('u').toLowerCase();
+ const {data:em}=await sb.rpc('email_da_username',{p_username:u});
+ if(!em)return err('Credenziali non valide');
+ const {data,error}=await sb.auth.signInWithPassword({email:em,password:$('pw').value});
+ if(error)return err('Credenziali non valide');
+ const {data:p}=await sb.from('profiles').select('ruolo').eq('id',data.user.id).single();
+ if(!p||p.ruolo!=='admin'){await sb.auth.signOut();return err('Questo account non è admin')}
+ await load()}
+function err(t){const e=$('er');if(e)e.textContent=t}
+async function out(){await sb.auth.signOut();A.ok=false;draw()}
+const setStato=(id,s)=>q(sb.from('profiles').update({stato:s}).eq('id',id));
+const annulla=id=>confirm('Annullare questo buono?')&&q(sb.from('buoni').update({stato:'annullato'}).eq('id',id));
+const tab=t=>{A.tab=t;A.ed=null;draw()};
+function csv(){const h=['numero','cliente','piva','campagna','modello','seriale','rivenditore','importo','data','stato'];
+ const rows=A.buoni.map(b=>[b.numero,b.profiles?.ragione_sociale,b.profiles?.partita_iva,b.campagne?.nome,b.modello,b.seriale,b.rivenditori?.nome,b.importo,dt(b.created_at),b.stato]);
+ const t=[h,...rows].map(r=>r.map(x=>'"'+String(x??'').replace(/"/g,'""')+'"').join(';')).join('\n');
+ const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\ufeff'+t],{type:'text/csv'}));a.download='buoni.csv';a.click()}
+async function newC(){const d=new Date(),e=new Date(Date.now()+90*864e5),f=x=>x.toISOString().slice(0,10);
+ const {data,error}=await sb.from('campagne').insert({nome:'Nuova campagna',data_inizio:f(d),data_fine:f(e),attiva:false,max_buoni_utente:2}).select().single();
+ if(error)return alert(error.message);A.ed=data.id;await load()}
+const upd=id=>sb.from('campagne').update({nome:v('n'),max_buoni_utente:+v('m'),data_inizio:v('d1'),data_fine:v('d2'),email_copia:v('em')||null,whatsapp_copia:v('wp')||null,attiva:$('at').checked}).eq('id',id);
+async function saveC(id){await q(upd(id));A.ed=null;draw()}
+async function addP(id){const m=v('pm'),a=+v('pa');if(!m||!(a>0))return alert('Inserisci modello e importo');
+ await upd(id);await q(sb.from('campagna_prodotti').insert({campagna_id:id,modello:m,importo_sconto:a}))}
+const delP=pid=>confirm('Rimuovere il prodotto?')&&q(sb.from('campagna_prodotti').delete().eq('id',pid));
+async function addR(){const n=v('rn');if(n)await q(sb.from('rivenditori').insert({nome:n}))}
+const togR=(id,a)=>q(sb.from('rivenditori').update({attivo:a}).eq('id',id));
+function view(){const t=A.tab;
+ const tabs=`<div class="tabs">${[['iscritti','Iscritti'],['buoni','Buoni'],['camp','Campagne'],['riv','Rivenditori']].map(([k,l])=>`<button class="${t==k?'on':''}" onclick="tab('${k}')">${l}</button>`).join('')}</div>`;
+ if(t==='iscritti'){const att=A.users.filter(u=>u.stato==='in_attesa').length;
+  return tabs+`<div class="card"><h3>Iscritti (${A.users.length}) · in attesa: ${att}</h3>${A.users.map(u=>`<div class="row"><div><b>${esc(u.ragione_sociale)}</b> <span class="badge ${STATI[u.stato]}">${u.stato.replace('_',' ')}</span><div class="mut">P.IVA ${esc(u.partita_iva)} · ${esc(u.email)}${u.telefono?' · '+esc(u.telefono):''}<br>@${esc(u.username)} · ${dt(u.created_at)}${u.ruolo==='admin'?' · admin':''}</div></div>
+  <div class="g">${u.stato!=='approvato'?`<button class="btn sm" onclick="setStato('${u.id}','approvato')">Approva</button>`:''}${u.stato!=='sospeso'&&u.ruolo!=='admin'?`<button class="btn sm r" onclick="setStato('${u.id}','sospeso')">Sospendi</button>`:''}</div></div>`).join('')}</div>`}
+ if(t==='buoni'){const val=A.buoni.filter(b=>b.stato==='valido');
+  return tabs+`<div class="card"><h3>Buoni emessi (${A.buoni.length})</h3><div class="mut">Validi: ${val.length} · totale sconti ${eur(val.reduce((s,b)=>s+Number(b.importo),0))}</div><button class="btn s" onclick="csv()">⬇ Esporta CSV</button>${A.buoni.map(b=>`<div class="row"><div><b>${esc(b.numero)}</b> <span class="badge ${b.stato==='valido'?'ok':'no'}">${b.stato}</span><div class="mut">${esc(b.profiles?.ragione_sociale)} (${esc(b.profiles?.partita_iva)})<br>${esc(b.campagne?.nome)} · ${esc(b.modello)} · ${esc(b.seriale)}<br>Rivenditore: ${esc(b.rivenditori?.nome)} · ${dt(b.created_at)}</div></div>
+  <div style="text-align:right"><b>${eur(b.importo)}</b>${b.stato==='valido'?`<br><button class="btn sm r" style="margin-top:6px" onclick="annulla('${b.id}')">Annulla</button>`:''}</div></div>`).join('')}</div>`}
+ if(t==='riv')return tabs+`<div class="card"><h3>Rivenditori aderenti (${A.riv.length})</h3>${A.riv.map(r=>`<div class="row"><span>${esc(r.nome)} ${r.attivo?'':'<span class="badge no">disattivo</span>'}</span><button class="btn sm s" onclick="togR('${r.id}',${!r.attivo})">${r.attivo?'Disattiva':'Riattiva'}</button></div>`).join('')}<label>Nuovo rivenditore</label><input id="rn" placeholder="Nome rivenditore"><button class="btn" onclick="addR()">+ Aggiungi</button></div>`;
+ if(A.ed===null)return tabs+`<div class="card"><h3>Campagne</h3>${A.camps.map(c=>`<div class="row"><div><b>${esc(c.nome)}</b> <span class="badge ${c.attiva?'ok':''}">${c.attiva?'attiva':'non attiva'}</span><div class="mut">${dt(c.data_inizio)} – ${dt(c.data_fine)} · max ${c.max_buoni_utente} buoni/utente · ${c.campagna_prodotti.length} prodotti</div></div><button class="btn sm s" onclick="A.ed='${c.id}';draw()">Modifica</button></div>`).join('')}<button class="btn" onclick="newC()">+ Nuova campagna</button></div>`;
+ const c=A.camps.find(x=>x.id===A.ed);
+ return tabs+`<div class="card"><h3>Modifica campagna</h3><label>Nome</label><input id="n" value="${esc(c.nome)}"><label><input type="checkbox" id="at" ${c.attiva?'checked':''}>Campagna attiva</label>
+ <label>Max buoni per utente</label><input id="m" type="number" min="1" value="${c.max_buoni_utente}"><label>Inizio</label><input id="d1" type="date" value="${c.data_inizio}"><label>Fine</label><input id="d2" type="date" value="${c.data_fine}">
+ <label>Email copia buoni</label><input id="em" type="email" value="${esc(c.email_copia||'')}"><label>WhatsApp copia buoni</label><input id="wp" value="${esc(c.whatsapp_copia||'')}">
+ <label>Prodotti inclusi</label>${c.campagna_prodotti.map(p=>`<div class="row"><span>${esc(p.modello)}</span><span><b>${eur(p.importo_sconto)}</b> <button class="btn sm r" onclick="delP('${p.id}')">✕</button></span></div>`).join('')||'<div class="mut">Nessun prodotto</div>'}
+ <div class="g" style="margin-top:8px"><input id="pm" placeholder="Modello / codice"><input id="pa" type="number" step="0.01" placeholder="€" style="width:90px"></div><button class="btn s" onclick="addP('${c.id}')">+ Aggiungi prodotto</button>
+ <div class="g"><button class="btn" onclick="saveC('${c.id}')">Salva</button><button class="btn s" onclick="A.ed=null;draw()">Chiudi</button></div></div>`}
+function draw(){$('app').innerHTML=`<div class="top"><div class="logo">VAI<b>coupon</b> Admin</div>${A.ok?'<button class="btn sm s" onclick="out()">Esci</button>':''}</div>`+(A.ok?view():`<div class="card"><h3>Accesso amministratore</h3><label>Username</label><input id="u" autocapitalize="none"><label>Password</label><input id="pw" type="password"><div class="err" id="er"></div><button class="btn" onclick="login()">Accedi</button></div>`)}
+(async()=>{const {data:{session}}=await sb.auth.getSession();if(session){const {data:p}=await sb.from('profiles').select('ruolo').eq('id',session.user.id).single();if(p&&p.ruolo==='admin')return load()}draw()})();
+</script></body></html>
