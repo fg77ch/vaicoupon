@@ -67,12 +67,23 @@ async function send(ch){const d=val(ch=='email'?'dm':'dw');
  err('Invio in corso...');
  const {error}=await sb.functions.invoke('invia-buono',{body:{buono_id:S.last.id,canale:ch=='wa'?'whatsapp':'email',destinatario:d}});
  if(error)return err('Invio non riuscito. Riprova più tardi.');err('');toast('Buono inviato a '+d)}
-async function cam(){const v=$('vd');v.style.display='block';
- try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});v.srcObject=stream;await v.play();
-  const fin=t=>{$('sn').value=t;if(navigator.vibrate)navigator.vibrate(80);stopCam();v.style.display='none'};
-  if('BarcodeDetector' in window){const d=new BarcodeDetector();(async function loop(){if(!stream)return;try{const r=await d.detect(v);if(r[0])return fin(r[0].rawValue)}catch(e){}setTimeout(loop,300)})()}
-  else if(window.ZXing){new ZXing.BrowserMultiFormatReader().decodeFromVideoElement(v,(r)=>{if(r&&stream)fin(r.getText())})}
- }catch(e){v.style.display='none';err('Fotocamera non disponibile: inserisci il seriale a mano')}}
+const hints=()=>{const H=new Map();H.set(ZXing.DecodeHintType.TRY_HARDER,true);return H};
+async function loadZX(){
+ for(const u of ['https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js','https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js','https://cdn.jsdelivr.net/npm/@zxing/library@0.20.0/umd/index.min.js']){
+  if(window.ZXing)return;
+  await new Promise(r=>{const s=document.createElement('script');s.src=u;s.onload=s.onerror=r;document.head.appendChild(s)})}
+ if(!window.ZXing)throw new Error('libreria non caricata')}
+async function cam(){const v=$('vd');v.style.display='block';err('Avvio fotocamera...');
+ const fin=t=>{$('sn').value=t;if(navigator.vibrate)navigator.vibrate(80);stopCam();v.style.display='none';err('')};
+ try{
+  if('BarcodeDetector' in window){stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});v.srcObject=stream;await v.play();err('Inquadra il codice a barre (lettore nativo)');
+   const d=new BarcodeDetector();(async function loop(){if(!stream)return;try{const r=await d.detect(v);if(r[0])return fin(r[0].rawValue)}catch(e){}setTimeout(loop,300)})()
+  }else{await loadZX();const rd=new ZXing.BrowserMultiFormatReader(hints());stream={getTracks:()=>[{stop:()=>rd.reset()}]};err('Inquadra il codice a barre (lettore ZXing)');
+   rd.decodeFromConstraints({video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}}},'vd',r=>{if(r&&stream)fin(r.getText())})}
+ }catch(e){stopCam();v.style.display='none';err('Lettore non disponibile ('+(e.message||e)+'): usa "Leggi da foto" o scrivi il seriale a mano')}}
+async function foto(inp){const f=inp.files[0];if(!f)return;err('Lettura della foto...');
+ try{await loadZX();const r=await new ZXing.BrowserMultiFormatReader(hints()).decodeFromImageUrl(URL.createObjectURL(f));$('sn').value=r.getText();err('')}
+ catch(e){err('Codice non letto dalla foto: avvicinati, tieni il codice dritto e a fuoco, oppure scrivilo a mano')}}
 function view(){const s=S.scr,P=S.prof;
  if(s==='login')return`<div class="card"><h2>Accedi</h2><label>Username</label><input id="u" autocapitalize="none" autocomplete="username"><label>Password</label><input id="pw" type="password" autocomplete="current-password"><div class="err" id="er"></div><button class="btn" onclick="login()">Accedi</button><button class="lnk" onclick="go('reg')">Non hai un account? Registrati</button></div>`;
  if(s==='reg')return`<div class="card"><h2>Registrazione installatore</h2><label>Ragione sociale</label><input id="r"><label>Partita IVA</label><input id="p" inputmode="numeric" maxlength="11"><label>Email</label><input id="e" type="email"><label>Telefono</label><input id="t" type="tel"><label>Username</label><input id="u" autocapitalize="none"><label>Password (min. 8 caratteri)</label><input id="pw" type="password">
@@ -82,7 +93,7 @@ function view(){const s=S.scr,P=S.prof;
  ${ok?'':`<div class="warn">${P.stato==='sospeso'?'Account sospeso. Contatta l\'amministratore.':'Il tuo account è in attesa di approvazione: potrai generare buoni appena verrà abilitato.'}</div>`}
  ${S.camps.map(c=>`<div class="card"><h3>${esc(c.nome)}</h3><div class="mut">${fd(c.data_inizio)} – ${fd(c.data_fine)}</div><div style="margin-top:6px">Buoni utilizzati <span class="badge">${S.buoni.filter(b=>b.campagna_id===c.id&&b.stato==='valido').length}/${c.max_buoni_utente}</span></div><div class="mut" style="margin-top:4px">${c.campagna_prodotti.map(p=>esc(p.modello)+' '+eur(p.importo_sconto)).join(' · ')}</div></div>`).join('')}
  <div class="card"><h3>I miei buoni</h3>${S.buoni.length?S.buoni.map(b=>`<div class="row" onclick="S.last=S.buoni.find(x=>x.id=='${b.id}');go('coupon')"><div><b>${esc(b.numero)}</b><div class="mut">${esc(b.modello)}${b.stato==='annullato'?' · annullato':''}</div></div><b>${eur(b.importo)}</b></div>`).join(''):'<div class="mut">Nessun buono ancora</div>'}</div><button class="lnk" onclick="out()">Esci</button>`}
- if(s==='scan')return`<div class="card"><h2>Scansiona codice a barre</h2><video id="vd" playsinline muted style="display:none"></video><button class="btn s" style="margin-top:0" onclick="cam()">📷 Attiva fotocamera</button>
+ if(s==='scan')return`<div class="card"><h2>Scansiona codice a barre</h2><video id="vd" playsinline muted style="display:none"></video><button class="btn s" style="margin-top:0" onclick="cam()">📷 Attiva fotocamera</button><label class="btn s" style="display:block;text-align:center;margin-top:6px;color:var(--fg)">📸 Leggi da foto<input type="file" accept="image/*" capture="environment" hidden onchange="foto(this)"></label>
  <label>Seriale prodotto</label><input id="sn" autocapitalize="characters"><label>Campagna e modello</label><select id="md">${S.camps.flatMap(c=>c.campagna_prodotti.map(p=>`<option value="${p.id}">${esc(c.nome)} – ${esc(p.modello)} (${eur(p.importo_sconto)})</option>`)).join('')}</select>
  <label>Rivenditore dove hai acquistato</label><select id="rv">${S.riv.map(r=>`<option value="${r.id}">${esc(r.nome)}</option>`).join('')}</select><div class="err" id="er"></div><button class="btn" id="gb" onclick="gen()">Genera buono</button><button class="lnk" onclick="go('home')">← Indietro</button></div>`;
  if(s==='coupon'){const b=S.last,R=x=>`<div class="row"><span class="mut">${x[0]}</span><span>${esc(x[1])}</span></div>`;return`<div class="cp"><div class="mut">Buono sconto VAIcoupon</div><div class="big">${eur(b.importo)}</div><h3>${esc(b.numero)}</h3>${R(['Cliente',P.ragione_sociale])}${R(['Seriale',b.seriale])}${R(['Modello',b.modello])}${R(['Rivenditore',b.rivenditori?.nome])}${R(['Validità',fd(b.valido_dal)+' – '+fd(b.valido_al)])}</div>
