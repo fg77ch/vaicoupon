@@ -22,7 +22,7 @@ input[type=checkbox]{width:auto;margin-right:8px}
 const $=i=>document.getElementById(i),v=i=>$(i).value.trim();
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';');
 const eur=n=>Number(n).toLocaleString('it-IT',{style:'currency',currency:'EUR'}),dt=s=>new Date(s).toLocaleDateString('it-IT');
-let cfg={};try{cfg=JSON.parse(localStorage.getItem('vc_cfg')||'{}')}catch(e){}
+let cfg={u:'https://ezrotwunejoinysllrti.supabase.co',k:'sb_publishable_hwEywLrPE3--_7uU0sXfiQ_pHVExWkx'};
 if(!cfg.u||!cfg.k){$('app').innerHTML='<div class="card"><h3>Configurazione mancante</h3><p>Apri prima l\'app VAIcoupon (index.html) da questo stesso sito e collega Supabase, poi torna qui.</p></div>';throw new Error('cfg')}
 const sb=supabase.createClient(cfg.u,cfg.k);
 let A={tab:'iscritti',users:[],buoni:[],camps:[],riv:[],ed:null,ok:false};
